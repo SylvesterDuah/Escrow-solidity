@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#f5f6f3" />
+    <title>ClearDeal — Sepolia ETH escrow</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <header class="topbar">
+      <a class="brand" href="/" aria-label="ClearDeal home"><span class="brand-icon">◇</span> clear<span>deal</span></a>
+      <div class="network-label"><i></i> SEPOLIA TESTNET <span>·</span> TEST ETH ONLY</div>
+    </header>
+    <main>
+      <section class="intro">
+        <p class="eyebrow">A SIMPLE SMART-CONTRACT ESCROW</p>
+        <h1>A safer way to<br /><span>make a deal.</span></h1>
+        <p class="intro-copy">Deploy a real escrow contract on Sepolia. Funds remain in the contract until the deal is settled—no backend or private keys required.</p>
+        <div class="notice"><strong>Testnet only.</strong> Connect MetaMask on Sepolia and use faucet ETH. Never send real ETH or share a seed phrase.</div>
+      </section>
+
+      <section class="layout">
+        <aside class="column">
+          <section class="card setup-card">
+            <div class="card-heading"><div><div class="kicker">WALLET</div><h2>Your account</h2></div><span id="wallet-state" class="badge">NOT CONNECTED</span></div>
+            <button id="connect-button" class="button primary full">Connect MetaMask</button>
+            <div id="wallet-details" class="wallet-details hidden"></div>
+            <p class="hint">Buyer deploys and funds. Seller and arbitrator connect their own wallets to act.</p>
+          </section>
+
+          <section class="card setup-card">
+            <div class="card-heading"><div><div class="kicker">NEW CONTRACT</div><h2>Create escrow</h2></div><span class="step-tag">BUYER</span></div>
+            <form id="deploy-form">
+              <label>Seller wallet address<input name="seller" type="text" placeholder="0x…" autocomplete="off" spellcheck="false" required /></label>
+              <label>Arbitrator wallet address<input name="arbitrator" type="text" placeholder="0x…" autocomplete="off" spellcheck="false" required /></label>
+              <label>Deposit amount <span class="unit">Sepolia ETH</span><input name="amount" type="number" min="0.000000000000000001" step="any" value="0.01" required /></label>
+              <div class="form-grid">
+                <label>Dispute window<select name="disputeWindow"><option value="60">1 minute</option><option value="3600">1 hour</option><option value="86400">1 day</option></select></label>
+                <label>Arbitration window<select name="arbitrationWindow"><option value="120">2 minutes</option><option value="3600">1 hour</option><option value="86400">1 day</option></select></label>
+              </div>
+              <button class="button primary full" type="submit">Deploy &amp; fund contract <span>→</span></button>
+              <p class="hint">MetaMask will ask you to confirm the deployment and deposit.</p>
+            </form>
+          </section>
+
+          <section class="card setup-card import-card">
+            <div class="card-heading"><div><div class="kicker">EXISTING CONTRACT</div><h2>Open an escrow</h2></div></div>
+            <form id="load-form">
+              <label>Escrow contract address<input name="address" id="load-address" type="text" placeholder="0x…" autocomplete="off" spellcheck="false" required /></label>
+              <button class="button secondary full" type="submit">Load escrow</button>
+            </form>
+            <p class="hint">Share the contract address with the seller and arbitrator so they can open the same escrow.</p>
+          </section>
+        </aside>
+
+        <div class="column">
+          <section class="card overview">
+            <div class="overview-row">
+              <div><div class="kicker">ESCROW BALANCE</div><div class="amount"><span id="amount">—</span> <small>ETH</small></div><div id="contract-address" class="mono muted">No contract loaded</div></div>
+              <span id="deal-state" class="badge">NOT STARTED</span>
+            </div>
+            <div id="deal-meta" class="meta-grid hidden">
+              <div><span>Contract balance</span><strong id="contract-balance">—</strong></div>
+              <div><span>Challenge deadline</span><strong id="dispute-deadline">—</strong></div>
+              <div><span>Arbitration deadline</span><strong id="arbitration-deadline">—</strong></div>
+            </div>
+            <div id="parties" class="parties hidden"></div>
+          </section>
+
+          <section class="card actions-card">
+            <div class="card-heading"><div><div class="kicker">ON-CHAIN WORKFLOW</div><h2>What happens next</h2></div><span class="live-label"><i></i> LIVE</span></div>
+            <div id="actions" class="action-content"><div class="empty"><span>◇</span><div><strong>Connect your wallet</strong><p>Connect MetaMask on Sepolia, then create a new escrow or open an existing contract.</p></div></div></div>
+          </section>
+
+          <section class="card activity-card">
+            <div class="card-heading"><div><div class="kicker">TRANSACTION LOG</div><h2>Recent activity</h2></div></div>
+            <div id="activity"><p class="muted">Confirmed transactions for this browser session will appear here.</p></div>
+          </section>
+        </div>
+      </section>
+      <footer>Educational example · unaudited · testnet ETH only</footer>
+    </main>
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  </body>
+</html>

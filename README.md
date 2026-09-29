@@ -39,3 +39,14 @@ npm run web
 ```
 
 Open [http://127.0.0.1:4173](http://127.0.0.1:4173). The site deploys a new escrow to an in-process, ephemeral Hardhat chain and lets you switch between three pre-funded demo roles. Use the test-clock buttons to move through deadlines without waiting. Stop the server with Ctrl+C; the local chain and its state are discarded. The web server only binds to loopback and is for local demonstrations, not production use.
+
+## Deploy the wallet-connected website to Netlify
+
+The Netlify build uses `web3/`, a static front end that deploys and calls the same Solidity contract from MetaMask on Sepolia. It does not use the local Hardhat web server.
+
+1. Push this repository to GitHub and import it into Netlify. The included `netlify.toml` sets the build command and publish directory (`dist`).
+2. In MetaMask, switch to Sepolia and get Sepolia test ETH from a faucet. Never use a mainnet wallet or real ETH for this learning project.
+3. Open the published site and connect MetaMask. The buyer enters the seller and arbitrator addresses, selects an amount and deadline windows, then confirms contract deployment and funding in MetaMask.
+4. Share the escrow address (or the URL after it is loaded) with the seller and arbitrator. They open the same site, connect the corresponding MetaMask accounts on Sepolia, and load the escrow to take their authorized actions.
+
+No private keys, seed phrases, or RPC secrets are needed in Netlify environment variables. The website uses the connected wallet's Sepolia provider and submits transactions for user approval. The contract is educational and unaudited; use test ETH only.
