@@ -1,4 +1,4 @@
-import { BrowserProvider, Contract, ContractFactory, getAddress, isAddress, JsonRpcProvider, parseEther } from "ethers";
+import { BrowserProvider, Contract, ContractFactory, formatEther, getAddress, isAddress, JsonRpcProvider, parseEther } from "ethers";
 import artifact from "../artifacts/contracts/Escrow.sol/Escrow.json";
 import "./style.css";
 
@@ -111,12 +111,20 @@ function notify(message, error = false) {
   toastTimer = setTimeout(() => toast.classList.remove("show"), 4200);
 }
 
+function roleFor(address, deal = currentDeal) {
+  if (!address) return "Unknown wallet";
+  if (deal?.buyer.toLowerCase() === address.toLowerCase()) return "Buyer";
+  if (deal?.seller.toLowerCase() === address.toLowerCase()) return "Seller";
+  if (deal?.arbitrator.toLowerCase() === address.toLowerCase()) return "Arbitrator";
+  return `Other wallet ${short(address)}`;
+}
+
 function addActivity(type, message, txHash, contractAddress, actor) {
   const contract = contractAddress ? getAddress(contractAddress) : "";
   const wallet = actor ? getAddress(actor) : "";
   activity.unshift({
     type,
-    message,
+    message: `${roleFor(wallet)} ${message}`,
     txHash,
     contract,
     wallet,
@@ -320,9 +328,7 @@ function renderActivity() {
   const recent = activity.slice(0, 12);
   activityElement.innerHTML = recent.length
     ? recent.map((item) => {
-      const hash = item.txHash
-        ? `<small>${transactionLink(item.txHash, !fullView)} · Sepolia</small>`
-        : '<small>Contract address loaded</small>';
+      const hash = item.txHash ? `${transactionLink(item.txHash, !fullView)} · Sepolia` : "Contract address loaded";
       const contract = item.contract ? ` · ${short(item.contract)}` : "";
       return `<div class="activity-row"><div>${escapeHtml(item.message)}<small>${hash}${escapeHtml(contract)}</small></div><time>${new Date(item.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time></div>`;
     }).join("")
@@ -373,21 +379,25 @@ async function transact(action, extra = {}) {
     let message;
     if (action === "dispute") {
       tx = await escrow.connect(signer).raiseDispute();
-      message = "Buyer opened a dispute";
+      message = "raised a dispute";
     } else if (action === "finalize") {
       tx = await escrow.connect(signer).finalizeUndisputed();
-      message = "Undisputed escrow finalized for seller";
+      message = `finalized the undisputed escrow; ${formatEther(currentDeal.amount)} ETH was credited to the seller`;
     } else if (action === "resolve") {
       const sellerAmount = parseEther(String(extra.sellerAmount));
       if (sellerAmount > currentDeal.amount) throw new Error("Seller award cannot exceed the escrow deposit.");
+      const buyerAmount = currentDeal.amount - sellerAmount;
       tx = await escrow.connect(signer).resolveDispute(sellerAmount, currentDeal.amount - sellerAmount);
-      message = `Arbitrator split the escrow: ${Number(sellerAmount) / 1e18} ETH to seller`;
+      message = `resolved the dispute: ${formatEther(sellerAmount)} ETH awarded to the seller and ${formatEther(buyerAmount)} ETH returned to the buyer`;
     } else if (action === "timeout") {
       tx = await escrow.connect(signer).refundAfterArbitrationTimeout();
-      message = "Arbitration timed out; full buyer refund credited";
+      message = `triggered the arbitration-timeout refund; ${formatEther(currentDeal.amount)} ETH was credited to the buyer`;
     } else if (action === "withdraw") {
+      const credit = account.toLowerCase() === currentDeal.buyer.toLowerCase()
+        ? currentDeal.buyerCredit
+        : await escrow.credits(account);
       tx = await escrow.connect(signer).withdraw();
-      message = "Escrow credit withdrawn";
+      message = `withdrew ${formatEther(credit)} ETH of escrow credit`;
     } else {
       throw new Error("Unknown escrow action.");
     }
@@ -454,10 +464,17 @@ $("#deploy-form").addEventListener("submit", async (event) => {
     escrow = deployment;
     localStorage.setItem(ESCROW_KEY, escrow.target);
     history.replaceState(null, "", `?escrow=${escrow.target}`);
-    const deploymentHash = deployment.deploymentTransaction().hash;
+    const deploymentTransaction = deployment.deploymentTransaction();
+    const deploymentHash = deploymentTransaction.hash;
     rememberContract(escrow.target, deploymentHash, account);
-    addActivity("deployment", `Deployed and funded escrow with ${Number(value) / 1e18} ETH`, deploymentHash, escrow.target, account);
     await refresh();
+    addActivity(
+      "deployment",
+      `deployed Contract #${contracts.findIndex((item) => item.address.toLowerCase() === escrow.target.toLowerCase()) + 1} and deposited ${formatEther(value)} Sepolia ETH`,
+      deploymentHash,
+      escrow.target,
+      account,
+    );
     notify("Escrow deployed and funded on Sepolia.");
   } catch (error) {
     notify(friendlyError(error), true);
