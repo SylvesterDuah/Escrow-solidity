@@ -4,11 +4,16 @@ import "./style.css";
 
 const SEPOLIA = 11155111n;
 const ESCROW_KEY = "cleardeal-sepolia-escrow";
+const HISTORY_KEY = "cleardeal-sepolia-history";
+const VIEW_KEY = "cleardeal-sepolia-full-view";
 const $ = (selector) => document.querySelector(selector);
 const walletButton = $("#connect-button");
 const actions = $("#actions");
 const toast = $("#toast");
-const activity = [];
+const savedHistory = loadHistory();
+const activity = savedHistory.activity;
+const contracts = savedHistory.contracts;
+const wallets = savedHistory.wallets;
 let provider = new JsonRpcProvider("https://rpc.sepolia.org", Number(SEPOLIA));
 let signer;
 let account;
@@ -16,6 +21,59 @@ let escrow;
 let currentDeal;
 let locked = false;
 let toastTimer;
+let fullView = localStorage.getItem(VIEW_KEY) === "true";
+
+function loadHistory() {
+  try {
+    const stored = JSON.parse(localStorage.getItem(HISTORY_KEY) || "{}");
+    return {
+      activity: Array.isArray(stored.activity) ? stored.activity.filter((entry) =>
+        entry && typeof entry.message === "string" &&
+        (entry.txHash === null || typeof entry.txHash === "string") &&
+        typeof entry.type === "string" &&
+        typeof entry.contract === "string" &&
+        typeof entry.time === "string"
+      ).slice(0, 100) : [],
+      contracts: Array.isArray(stored.contracts) ? stored.contracts.filter((entry) =>
+        entry && typeof entry.address === "string" &&
+        (entry.deploymentHash === null || typeof entry.deploymentHash === "string")
+      ).slice(0, 50) : [],
+      wallets: Array.isArray(stored.wallets) ? stored.wallets.filter((address) => typeof address === "string").slice(0, 50) : [],
+    };
+  } catch {
+    return { activity: [], contracts: [], wallets: [] };
+  }
+}
+
+function saveHistory() {
+  try {
+    localStorage.setItem(HISTORY_KEY, JSON.stringify({ activity, contracts, wallets }));
+  } catch (error) {
+    console.error("Could not save the Sepolia transaction log in this browser.", error);
+    notify("Transaction confirmed, but this browser could not save the local transaction history.", true);
+  }
+}
+
+function rememberWallet(address) {
+  if (!address) return;
+  const normalized = getAddress(address);
+  if (!wallets.some((saved) => saved.toLowerCase() === normalized.toLowerCase())) {
+    wallets.unshift(normalized);
+    wallets.splice(0, Math.max(0, wallets.length - 50));
+  }
+}
+
+function rememberContract(address, deploymentHash = null, deployer = null) {
+  const normalized = getAddress(address);
+  let record = contracts.find((item) => item.address.toLowerCase() === normalized.toLowerCase());
+  if (!record) {
+    record = { address: normalized, deploymentHash: null, deployer: null };
+    contracts.unshift(record);
+    contracts.splice(50);
+  }
+  if (deploymentHash) record.deploymentHash = deploymentHash;
+  if (deployer) record.deployer = getAddress(deployer);
+}
 
 function short(address) {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
@@ -53,10 +111,22 @@ function notify(message, error = false) {
   toastTimer = setTimeout(() => toast.classList.remove("show"), 4200);
 }
 
-function addActivity(message, hash) {
-  activity.unshift({ message, hash, time: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" }) });
-  activity.splice(12);
-  $("#activity").innerHTML = activity.map((item) => `<div class="activity-row"><div>${escapeHtml(item.message)}<small>${item.hash ? `${escapeHtml(item.hash.slice(0, 14))}… · Sepolia` : "Local browser action"}</small></div><time>${item.time}</time></div>`).join("");
+function addActivity(type, message, txHash, contractAddress, actor) {
+  const contract = contractAddress ? getAddress(contractAddress) : "";
+  const wallet = actor ? getAddress(actor) : "";
+  activity.unshift({
+    type,
+    message,
+    txHash,
+    contract,
+    wallet,
+    time: new Date().toISOString(),
+  });
+  activity.splice(100);
+  rememberContract(contract);
+  rememberWallet(wallet);
+  saveHistory();
+  renderActivity();
 }
 
 function escapeHtml(value) {
@@ -104,12 +174,15 @@ async function connect() {
   if (!accounts.length) throw new Error("No wallet account was selected.");
   signer = await provider.getSigner();
   account = getAddress(await signer.getAddress());
+  rememberWallet(account);
+  saveHistory();
   $("#wallet-state").textContent = "SEPOLIA CONNECTED";
   $("#wallet-state").className = "badge resolved";
   const balance = await provider.getBalance(account);
   $("#wallet-details").classList.remove("hidden");
   $("#wallet-details").innerHTML = `<div><span>Connected wallet</span><strong class="wallet-address" title="${account}">${short(account)}</strong></div><div><span>Test ETH balance</span><strong>${Number((Number(balance) / 1e18).toFixed(5))} ETH</strong></div>`;
   walletButton.textContent = "Refresh wallet";
+  renderActivity();
   if (escrow) escrow = escrow.connect(signer);
   await refresh();
   if (!escrow) $("#actions").innerHTML = `<div class="empty"><span>◇</span><div><strong>Wallet connected</strong><p>Enter the seller and arbitrator addresses to deploy, or load an existing escrow contract.</p></div></div>`;
@@ -123,6 +196,9 @@ async function loadEscrow(address) {
   const candidate = new Contract(normalized, artifact.abi, signer || provider);
   await candidate.buyer();
   escrow = signer ? candidate.connect(signer) : candidate;
+  rememberContract(normalized);
+  saveHistory();
+  renderActivity();
   localStorage.setItem(ESCROW_KEY, normalized);
   const url = new URL(window.location.href);
   url.searchParams.set("escrow", normalized);
@@ -198,6 +274,69 @@ function button(label, action, className, disabled = false) {
   return `<button class="button ${className}" data-action="${action}" ${disabled || locked ? "disabled" : ""}>${label}</button>`;
 }
 
+const actionLabels = {
+  deployment: "Deployment TX",
+  dispute: "Dispute TX",
+  arbitration: "Arbitration TX",
+  withdrawal: "Withdrawal TX",
+  finalization: "Finalization TX",
+  "timeout-refund": "Timeout refund TX",
+};
+
+function transactionLink(hash, compact) {
+  if (!hash) return '<span class="transaction-missing">Not recorded in this browser</span>';
+  const displayHash = compact ? `${hash.slice(0, 14)}…${hash.slice(-8)}` : hash;
+  return `<a class="transaction-value" href="https://sepolia.etherscan.io/tx/${encodeURIComponent(hash)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(hash)}">${escapeHtml(displayHash)}</a>`;
+}
+
+function addressLink(address) {
+  return `<a class="transaction-value" href="https://sepolia.etherscan.io/address/${encodeURIComponent(address)}" target="_blank" rel="noopener noreferrer">${escapeHtml(address)}</a>`;
+}
+
+function contractDetails(contract, index) {
+  const items = activity.filter((entry) => entry.contract.toLowerCase() === contract.address.toLowerCase());
+  const deployment = contract.deploymentHash || items.find((entry) => entry.type === "deployment")?.txHash || null;
+  const deployer = contract.deployer || items.find((entry) => entry.type === "deployment")?.wallet || null;
+  const rows = [
+    `<div class="detail-row"><span>Contract #${index + 1}</span>${addressLink(contract.address)}</div>`,
+    `<div class="detail-row"><span>Deployment TX #${index + 1}</span>${transactionLink(deployment, false)}</div>`,
+  ];
+  if (deployer) rows.push(`<div class="detail-row"><span>Deployer wallet</span>${addressLink(deployer)}</div>`);
+  for (const type of ["dispute", "arbitration", "withdrawal", "finalization", "timeout-refund"]) {
+    const matches = items.filter((entry) => entry.type === type && entry.txHash);
+    if (matches.length) {
+      matches.forEach((entry, actionIndex) => {
+        const suffix = matches.length > 1 ? ` #${actionIndex + 1}` : "";
+        rows.push(`<div class="detail-row"><span>${actionLabels[type]}${suffix}</span>${transactionLink(entry.txHash, false)}</div>`);
+      });
+    }
+  }
+  return `<section class="contract-record"><h3>Contract #${index + 1} transactions</h3>${rows.join("")}</section>`;
+}
+
+function renderActivity() {
+  const activityElement = $("#activity");
+  const detailsElement = $("#transaction-details");
+  const recent = activity.slice(0, 12);
+  activityElement.innerHTML = recent.length
+    ? recent.map((item) => {
+      const hash = item.txHash
+        ? `<small>${transactionLink(item.txHash, !fullView)} · Sepolia</small>`
+        : '<small>Contract address loaded</small>';
+      const contract = item.contract ? ` · ${short(item.contract)}` : "";
+      return `<div class="activity-row"><div>${escapeHtml(item.message)}<small>${hash}${escapeHtml(contract)}</small></div><time>${new Date(item.time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</time></div>`;
+    }).join("")
+    : '<p class="muted">Confirmed transactions for this browser session will appear here.</p>';
+
+  detailsElement.innerHTML = wallets.length || contracts.length
+    ? `${wallets.length ? `<section class="contract-record"><h3>Wallets</h3>${wallets.map((address, index) => `<div class="detail-row"><span>Wallet${wallets.length > 1 ? ` #${index + 1}` : ""}</span>${addressLink(address)}</div>`).join("")}</section>` : ""}${contracts.length ? contracts.map(contractDetails).join("") : ""}<p class="history-note">Full transaction history is saved in this browser. Contracts opened here show their address; a deployment hash is shown if this browser recorded the deployment.</p>`
+    : '<p class="muted">Wallets and transactions will appear here after you connect and interact with an escrow.</p>';
+
+  detailsElement.classList.toggle("hidden", !fullView);
+  $("#full-view-toggle").textContent = fullView ? "Show compact view" : "Show full details";
+  $("#full-view-toggle").setAttribute("aria-expanded", String(fullView));
+}
+
 function renderActions() {
   if (!currentDeal) return;
   const d = currentDeal;
@@ -254,7 +393,14 @@ async function transact(action, extra = {}) {
     }
     notify("Waiting for Sepolia confirmation…");
     const receipt = await tx.wait();
-    addActivity(message, receipt.hash);
+    const eventType = {
+      dispute: "dispute",
+      resolve: "arbitration",
+      timeout: "timeout-refund",
+      withdraw: "withdrawal",
+      finalize: "finalization",
+    }[action];
+    addActivity(eventType, message, receipt.hash, escrow.target, account);
     await refresh();
     notify("Transaction confirmed on Sepolia.");
   } catch (error) {
@@ -308,7 +454,9 @@ $("#deploy-form").addEventListener("submit", async (event) => {
     escrow = deployment;
     localStorage.setItem(ESCROW_KEY, escrow.target);
     history.replaceState(null, "", `?escrow=${escrow.target}`);
-    addActivity(`Deployed and funded escrow with ${Number(value) / 1e18} ETH`, deployment.deploymentTransaction().hash);
+    const deploymentHash = deployment.deploymentTransaction().hash;
+    rememberContract(escrow.target, deploymentHash, account);
+    addActivity("deployment", `Deployed and funded escrow with ${Number(value) / 1e18} ETH`, deploymentHash, escrow.target, account);
     await refresh();
     notify("Escrow deployed and funded on Sepolia.");
   } catch (error) {
@@ -358,6 +506,12 @@ if (initialAddress) {
   $("#load-address").value = initialAddress;
   loadEscrow(initialAddress).catch((error) => notify(friendlyError(error), true));
 }
+$("#full-view-toggle").addEventListener("click", () => {
+  fullView = !fullView;
+  localStorage.setItem(VIEW_KEY, String(fullView));
+  renderActivity();
+});
+renderActivity();
 setInterval(() => {
   if (escrow && provider && !locked) refresh().catch(() => {});
 }, 8000);

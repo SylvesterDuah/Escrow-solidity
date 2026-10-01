@@ -75,7 +75,11 @@
           </section>
 
           <section class="card activity-card">
-            <div class="card-heading"><div><div class="kicker">TRANSACTION LOG</div><h2>Recent activity</h2></div></div>
+            <div class="card-heading">
+              <div><div class="kicker">TRANSACTION LOG</div><h2>Recent activity</h2></div>
+              <button id="full-view-toggle" class="button outline view-toggle" type="button" aria-expanded="false" aria-controls="transaction-details">Show full details</button>
+            </div>
+            <div id="transaction-details" class="transaction-details hidden"></div>
             <div id="activity"><p class="muted">Confirmed transactions for this browser session will appear here.</p></div>
           </section>
         </div>

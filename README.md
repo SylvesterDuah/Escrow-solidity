@@ -50,3 +50,5 @@ The Netlify build uses `web3/`, a static front end that deploys and calls the sa
 4. Share the escrow address (or the URL after it is loaded) with the seller and arbitrator. They open the same site, connect the corresponding MetaMask accounts on Sepolia, and load the escrow to take their authorized actions.
 
 No private keys, seed phrases, or RPC secrets are needed in Netlify environment variables. The website uses the connected wallet's Sepolia provider and submits transactions for user approval. The contract is educational and unaudited; use test ETH only.
+
+The Sepolia transaction log has a full-details toggle showing wallet and contract addresses and full transaction hashes with Etherscan links. It stores public activity locally in that browser only; older transactions from before this feature was enabled are not automatically imported. Load each existing contract address to include it in the local contract list.
